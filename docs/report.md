@@ -39,6 +39,13 @@ In practice, the parameter $\theta$ is updated after every timestep like so:
 
 $\Delta\theta=\alpha\nabla_\theta\ln\pi_\theta(A_t|S_t)*(R_{t+1} + \gamma V(S_{t+1}) - V(S_t))$
 
+## Methodology
+
+### Helpful Changes
+- N-step returns
+- Entropy regularization
+- Generalized advantage estimation
+
 ## Resources
 ### Intro to A2C
 https://huggingface.co/blog/deep-rl-a2c
