@@ -1,5 +1,9 @@
 # Deep Dive Final Report: Advantage Actor-Critic (A2C)
 
+## Project Overview
+
+This is my final project for Data Structures and Algorithms, F25. Following up on [my midterm project, in which I implemented the Q-learning algorithm](github.com/itannermahncke/stochastic_q-learning_navigation/), I dove deeper into reinforcement learning by exploring actor-critic algorithms. I learned about the foundational math behind actor-critic, and I implemented the Advantage Actor-Critic algorithm myself for a test enviroment. Finally, I reflected on the sucess of my A2C agent and considered further improvements to my implementation.
+
 ## Introduction to Actor-Critic
 
 ### Actor-Critic Contextualized
@@ -41,10 +45,84 @@ $\Delta\theta=\alpha\nabla_\theta\ln\pi_\theta(A_t|S_t)*(R_{t+1} + \gamma V(S_{t
 
 ## Methodology
 
-### Helpful Changes
-- N-step returns
-- Entropy regularization
-- Generalized advantage estimation
+### Environment Selection
+
+I chose to train my A2C agent using the [OpenAI Gymnasium Library](https://gymnasium.farama.org/), which provides built-in environments with set action, observation, and reward spaces. This is a step up from my midterm, in which I built the environment myself. With Gymnasium, the environment was provided for me and I could focus on my algorithm implementation.
+
+Gymnasium has several environments to choose from. Since actor-critic algorithms are well-suited to environments with highly dimensional, continuous observation spaces, I decided to go with the [Box2D Lunar Lander environment](https://gymnasium.farama.org/environments/box2d/lunar_lander/).
+
+![Lunar Lander GIF]("docs/lunar_lander.gif")
+
+In the Lunar Lander environment,an agent learns to land a vehicle upright in a given landing zone without crashing. The action space is discrete, with four actions available:
+- do nothing
+- fire main engine
+- fire left engine
+- fire right engine
+
+The observation space is continuous, and contains eight parameters for the agent to track:
+- x and y position
+- x and y velocity
+- angle and angular velocity
+- booleans for if each of two legs is touching the ground
+
+Finally, the environment provides rewards (or penalties) to the agent at each timestep for the following traits (or lack thereof):
+- nearness to the landing pad
+- slow speeds
+- uprightness
+- contact with the ground
+- inactive engines
+
+Ths reward field encourages the agent to quickly reach the landind pad in a way that is smooth and expends as little energy as possible.
+
+### Designing the Actor and Critic
+
+I initialized both the actor and the critic as Pytorch neural networks. For nearly all of my hyperparameters, I chose values that matched the [stable-baselines3 library's hyperparameters for A2C](https://stable-baselines3.readthedocs.io/en/master/modules/a2c.html). I did this to simplify debugging and save hyperparameter exploration for after I got a working impementation.
+
+The actor approximates a policy function that maps states to actions; therefore, its input tensor has a size of eight (for eight observed variables) and its output tensor has a size of four (for four actions). In contrast, the critic approximates a value function that maps states to a value scalar; therefore, its input tensor has a size of eight and its output is a single scalar value.
+
+The first hyperparameter I will discuss is the learning rates of the actor and the critic. The learning rate determines how quickly each neural network adjusts its weights in response to new observations. Higher learning rates can lead to high variance and noisiness, while lower learning rates make for slow convergence. In actor-critic algorithms, the critic must learn faster than the actor so that its value estimates can keep up with the actor's rapidly changing policy. On the flip side, the actor must learn slowly to prevent instability in its policy and to encourage confidence in the policy it eventually converges on.
+
+Based on this reasoning, and the stable-baslines3 examples, I chose the following learning rate values:
+
+$\alpha_{actor} = 0.0007$
+
+$\alpha_{critic} = 0.001$
+
+The next hyperparamter I considered is the discount factor. A high discount factor gives future reward estimates considerable weight when calculating the returns of a given action. A low discount factor makes for a greedier agent focused only on immediate rewards. I chose a high discount factor, to encourage the agent to select actions that led to an eventual landing, rather than minimizing immediate penalties:
+
+$\gamma = 0.99$
+
+### Other Design Choices
+
+#### N-Step Returns
+
+While learning about actor-critic algorithms, I considered the following question: should the actor and critic learn after each step taken, or after each completed episode? It turns out that many other people have also debated this, and the answer is "somewhere in between".
+
+1-step (temporal difference, or TD) methods minimize variance in the returns of a given state-action pair due to their frequency, but also introduce bias as they rely on their own estimates of future rewards to calculate value. On the other hand, episodic (monte carlo, or MC) methods remain unbiased but can introduce high variance as outcomes vary wildly from episode to episode.
+
+A happy compromise is an n-step return method, in which some number of steps between 1 and infinty (or episode termination) occur between each update. By choosing to do updates after batches of n steps, I was able to speed up training while producing low-variance, unbiased updates to my actor and critic. I set the batch size like so:
+
+$n_{steps} = 5$
+
+#### Entropy Regularization
+
+Entropy regularization encourages additional exploration in the agent by factoring entropy loss into the actor's learning. Essentially, the actor learns to maximize rewards and maximize entropy, or random exploration, throughout training. This is valuable because it helps prevent the agent from converging early onto a suboptimal or poor policy. By always encouraging random exploration, the agent will try out other policies throughout training, which gives it the opportunity to find better strategies that build on its existing progress.
+
+I set my initial entropy coefficient to zero and tuned it during training:
+
+$entropy=0.0$
+
+#### Generalized Advantage Estimation
+
+In A2C, returns are contextualized by subtracting a baseline average value provided by the criti. This is called the advantage function, and represents the first A in A2C! The advantage function describes how much better a given action is compared to other available actions. However, the critic's value function approximation is imperfect, and can introduce bias the advantage.
+
+Generalized Advantage Estimation (GAE) reduces critic bias by factoring in TD error, which is the difference between the critic's value estimate of a given state and the calculated value of a given state (approximated as the sum of the immediate reward and the discounted future reward). GAE loops backwards through time over calculated advantages, and each time weighting the advantage by the TD error and future GAE advantage estimates. This results in lower variance and bias in the advantage function, which allows the actor to learn more steadily.
+
+GAE requires one parameter, which controls the weighting of future advantages alongside the discount factor. I used the following value:
+
+$\lambda = 0.95$
+
+## Results and Future Work
 
 ## Resources
 ### Intro to A2C
@@ -62,3 +140,6 @@ https://github.com/hermesdt/reinforcement-learning/blob/master/a2c/cartpole_a2c_
 https://github.com/galinilin/tf_A3C_BipedalWalker
 https://github.com/DLR-RM/rl-baselines3-zoo
 https://github.com/huckiyang/DRL-torch-CoRL/blob/master/Char04%20A2C/A2C.py
+### Specific Methods
+https://milvus.io/ai-quick-reference/what-is-the-difference-between-monte-carlo-methods-and-td-learning
+https://shivang-ahd.medium.com/generalized-advantage-estimation-a-deep-dive-into-bias-variance-and-policy-gradients-a5e0b3454dad
